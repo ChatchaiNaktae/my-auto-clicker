@@ -2,6 +2,7 @@ import customtkinter as ctk
 import tkinter as tk
 import pyautogui
 import keyboard
+import mouse
 import threading
 import webbrowser
 import time
@@ -51,6 +52,24 @@ class ModernAutoClicker(ctk.CTk):
         self.is_clicking = False
         self.click_thread = None
         self.hotkey = 'F6'
+
+        # --- State Variables ---
+        self.is_clicking = False
+        self.click_thread = None
+        self.hotkey = 'F6'
+
+        # เพิ่มตัวแปรสำหรับระบบ Macro
+        self.recorded_events = []
+        self.is_recording = False
+        self.is_playing_macro = False
+
+        # Build UI Elements
+        self.setup_ui()
+
+        # Register the hotkeys
+        keyboard.add_hotkey(self.hotkey, self.toggle_clicking)
+        keyboard.add_hotkey('ctrl+3', self.toggle_recording)  # ปุ่ม Record ตามหน้า Setting รูปที่ 4
+        keyboard.add_hotkey('ctrl+1', self.toggle_playback)  # ปุ่ม Play ตามหน้า Setting รูปที่ 4
 
         # Build UI Elements
         self.setup_ui()
@@ -445,13 +464,15 @@ class ModernAutoClicker(ctk.CTk):
         btn_frame = ctk.CTkFrame(self.rp_window, fg_color="transparent")
         btn_frame.pack(pady=15, expand=True)
 
-        btn_play = ctk.CTkButton(btn_frame, text="▶", font=("Arial", 24), text_color="#7BB53B", fg_color="white",
-                                 hover_color="#f1f2f6", width=50, height=40, corner_radius=5)
-        btn_play.pack(side="left", padx=5)
+        self.btn_play = ctk.CTkButton(btn_frame, text="▶", font=("Arial", 24), text_color="#7BB53B", fg_color="white",
+                                      hover_color="#f1f2f6", width=50, height=40, corner_radius=5,
+                                      command=self.toggle_playback)
+        self.btn_play.pack(side="left", padx=5)
 
-        btn_rec = ctk.CTkButton(btn_frame, text="●", font=("Arial", 20), text_color="#e74c3c", fg_color="white",
-                                hover_color="#f1f2f6", width=50, height=40, corner_radius=5)
-        btn_rec.pack(side="left", padx=5)
+        self.btn_rec = ctk.CTkButton(btn_frame, text="●", font=("Arial", 20), text_color="#e74c3c", fg_color="white",
+                                     hover_color="#f1f2f6", width=50, height=40, corner_radius=5,
+                                     command=self.toggle_recording)
+        self.btn_rec.pack(side="left", padx=5)
 
         btn_more = ctk.CTkButton(btn_frame, text="More", text_color="black", fg_color="white", hover_color="#f1f2f6",
                                  width=60, height=40, corner_radius=5,
@@ -660,6 +681,56 @@ class ModernAutoClicker(ctk.CTk):
                       command=rep_win.destroy).pack(side="left", padx=10)
         ctk.CTkButton(bot_frame, text="Cancel", width=80, fg_color="white", text_color="black",
                       command=rep_win.destroy).pack(side="left", padx=10)
+
+    # ==========================================
+    # --- Phase 3: Macro Record & Playback Logic ---
+    # ==========================================
+    def toggle_recording(self):
+        # ถ้าเปิดหน้าต่างใหญ่อยู่ ให้ไม่ทำงาน (บังคับให้ต้องอยู่โหมดหน้าต่างเล็กถึงจะอัดได้)
+        if self.winfo_viewable(): return
+
+        self.is_recording = not self.is_recording
+
+        if self.is_recording:
+            # --- เริ่มอัด ---
+            self.recorded_events.clear()
+            self.btn_rec.configure(text="■", text_color="black")  # เปลี่ยนไอคอนเป็นสี่เหลี่ยมหยุด
+            self.rp_window.title("Recording...")
+
+            # หน่วงเวลา 0.3 วิ ก่อนเริ่มอัด เพื่อไม่ให้อัดจังหวะที่เราเอาเมาส์ไปคลิกปุ่ม "เริ่มอัด" ติดไปด้วย
+            threading.Timer(0.3, lambda: mouse.hook(self.recorded_events.append)).start()
+        else:
+            # --- หยุดอัด ---
+            try:
+                mouse.unhook(self.recorded_events.append)
+            except Exception:
+                pass
+            self.btn_rec.configure(text="●", text_color="#e74c3c")
+            self.rp_window.title("OP A...")
+
+    def toggle_playback(self):
+        # ไม่ทำงานถ้าหน้าต่างใหญ่เปิดอยู่ หรือ ยังไม่มีข้อมูลที่อัดไว้
+        if self.winfo_viewable() or len(self.recorded_events) == 0: return
+
+        self.is_playing_macro = not self.is_playing_macro
+
+        if self.is_playing_macro:
+            self.btn_play.configure(text="■", text_color="black")
+            self.rp_window.title("Playing...")
+            # รัน Playback ใน Thread แยกเพื่อให้หน้าต่าง UI ไม่ค้างเวลาเมาส์ขยับ
+            threading.Thread(target=self._playback_thread, daemon=True).start()
+        else:
+            self.btn_play.configure(text="▶", text_color="#7BB53B")
+            self.rp_window.title("OP A...")
+
+    def _playback_thread(self):
+        # คำสั่งพระเอก: เล่นการขยับและคลิกทั้งหมดที่อัดไว้ ตามระยะเวลาจริงเป๊ะๆ!
+        mouse.play(self.recorded_events)
+
+        # เมื่อเล่นจบครบตามที่อัดไว้ ให้รีเซ็ตปุ่มและสถานะกลับเป็นปกติ
+        self.is_playing_macro = False
+        self.after(0, lambda: self.btn_play.configure(text="▶", text_color="#7BB53B"))
+        self.after(0, lambda: self.rp_window.title("OP A..."))
 
 if __name__ == "__main__":
     app = ModernAutoClicker()
